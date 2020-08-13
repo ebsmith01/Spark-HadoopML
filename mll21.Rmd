@@ -1,0 +1,508 @@
+---
+title: "Machine Learning 2 SVM"
+author: "Evin Smith"
+date: "January 8, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+rm(list=ls())
+
+library(doParallel) 
+library(snow) 
+library(e1071)
+library(kernlab)      
+
+
+
+library(readr)
+library(zoo)
+library(psych)
+library(ROCR)
+library(corrplot)
+library(InformationValue)
+library(pbkrtest)
+library(leaps)
+library(MASS)
+library(corrplot)
+library(glm2)
+install.packages('plotly')
+library(plotly)
+library(dplyr)
+library(aod)
+library(plotly)
+library(ggplot2)
+```
+
+
+```{r}
+
+
+data <- read.csv("1train.csv")
+
+remove_cols <- names(data) %in% c('INDEX')
+data<- data[!remove_cols]
+str(data)
+data.train.summary <- summary(data)
+data.train.summary
+
+
+test <- read.csv("1test.csv")
+
+
+
+
+```   
+
+```{r}
+
+data$TARGET_FLAG <- as.factor(data$TARGET_FLAG)
+
+data$SEX <- as.factor(data$SEX)
+data$EDUCATION <- as.factor(data$EDUCATION)
+
+data$PARENT1 <- as.factor(data$PARENT1)
+data$INCOME <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", data$INCOME)))
+
+data$HOME_VAL <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", data$HOME_VAL)))
+data$RED_CAR <- as.factor(ifelse(data$RED_CAR=="yes", 1, 0))
+data$URBANICITY <- ifelse(data$URBANICITY == "Highly Urban/ Urban", "Urban", "Rural")
+data$URBANICITY <- as.factor(data$URBANICITY)
+data$JOB <- as.factor(data$JOB)
+data$CAR_USE <- as.factor(data$CAR_USE)
+data$CAR_TYPE <- as.factor(data$CAR_TYPE)
+data$DO_KIDS_DRIVE <- as.factor(ifelse(data$KIDSDRIV > 0, 1, 0 ))
+data$OLDCLAIM <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", data$HOME_VAL)))
+data$BLUEBOOK <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", data$BLUEBOOK)))
+str(data)
+```
+
+
+```{r}
+train.summary0 <- summary(data$TARGET_FLAG)
+train.summary0 
+
+plot(data$EDUCATION)
+
+```
+
+
+```{r}
+# Bin Income
+data$INCOME_bin[is.na(data$INCOME)] <- "NA"
+data$INCOME_bin[data$INCOME == 0] <- "Zero"
+data$INCOME_bin[data$INCOME >= 1 & data$INCOME < 30000] <- "Low"
+data$INCOME_bin[data$INCOME >= 30000 & data$INCOME < 80000] <- "Medium"
+data$INCOME_bin[data$INCOME >= 80000] <- "High"
+data$INCOME_bin <- factor(data$INCOME_bin)
+data$INCOME_bin <- factor(data$INCOME_bin, levels=c("NA","Zero","Low","Medium","High"))
+
+
+
+
+
+Manager <- ifelse(data$JOB=='Manager',1,0)
+revoked <- ifelse(data$REVOKED=='Yes',1,0)
+SINGLE_PARENT <-  ifelse(data$PARENT1 == 'Yes', 1, 0)
+female <-  ifelse(data$SEX == 'z_F', 1, 0)
+MARRIED <- ifelse(data$MSTATUS == 'Yes', 1,0)
+private <- ifelse(data$CAR_USE ==  'Private', 1,0)
+
+
+
+
+data$CAR_AGE[data$CAR_AGE < 0] <- NA
+
+data$AGE[is.na(data$AGE)] <- mean(data$AGE, na.rm = "TRUE")
+data$YOJ <- na.aggregate(data$YOJ, data$JOB, mean, na.rm = TRUE)
+data$INCOME <- na.aggregate(data$INCOME, data$JOB, mean, na.rm = TRUE)
+data$HOME_VAL <- na.aggregate(data$HOME_VAL, data$JOB, mean, na.rm = TRUE )
+data$CAR_AGE <- na.aggregate(data$CAR_AGE, data$CAR_TYPE, mean, na.rm = TRUE)
+data$CAR_AGE[data$CAR_AGE < 0 ] <- 0 
+data$OLDCLAIM <- ifelse(data$CAR_AGE < 5 & !is.na(data$CAR_AGE),0,data$OLDCLAIM)
+data$OLDCLAIM <- na.aggregate(data$OLDCLAIM, data$CAR_AGE, mean, na.rm = TRUE )
+data$HOME_OWNER <- ifelse(data$HOME_VAL == 0, 0, 1)
+data$SQRT_TRAVTIME <- sqrt(data$TRAVTIME)
+data$SQRT_BLUEBOOK <- sqrt(data$BLUEBOOK)
+
+
+newdf <- data.frame(revoked,Manager,female,MARRIED,private, SINGLE_PARENT)
+data1 <- data.frame(newdf,data)
+data1 <- data1[-13]
+data1 <- data1[-14]
+data1 <- data1[-14]
+data1 <- data1[-15]
+data1 <- data1[-23]
+data1 <- data1[-16]
+
+
+
+```   
+
+
+title: "Data Exploration"
+output: flexdashboard::flex_dashboard
+---
+    
+   
+Column {.tabset}
+-------------------------------------
+   
+### Chart 1
+
+```{r}
+par(mfrow=c(2,2))
+hist(data$AGE, col = "red", xlab = "Age", main = "AGE Hist")
+data0<- subset(data, TARGET_FLAG == 1 )
+boxplot(data$AGE, col = "red", main = "AGE BoxPlot")
+par(mfrow=c(1,1))
+
+par(mfrow=c(2,2))
+hist(sqrt(data$TRAVTIME), col = "green", xlab = "SQRT TRAVTIME", main = "SQRT TRAVTIME Hist")
+hist(data$YOJ, col = "blue", xlab = "YOJ", main = "YOJ Hist")
+boxplot(sqrt(data$TRAVTIME), col = "green", main = "SQRT TRAVTIME BoxPlot")
+boxplot(data$YOJ, col = "blue", main = "YOJ BoxPlot")
+par(mfrow=c(1,1))
+
+par(mfrow=c(2,2))
+hist(sqrt(data$BLUEBOOK), col = "green", xlab = "SQRT BLUEBOOK", main = "SQRT BLUEBOOK Hist")
+hist((data$TIF), col = "blue", xlab = "TIF", main = "TIF Hist")
+boxplot(sqrt(data$BLUEBOOK), col = "green", main = "SQRT BLUEBOOK BoxPlot")
+boxplot(data$TIF, col = "blue", main = "TIF BoxPlot")
+par(mfrow=c(1,1))
+
+par(mfrow=c(2,2))
+hist(data$MVR_PTS, col = "red", xlab = "MVR_PTS", main = "MVR_PTS Hist")
+hist(data$CAR_AGE, col = "blue", xlab = "CAR_AGE", main = "CAR_AGE Hist")
+boxplot(data$MVR_PTS, col = "red", main = "MVR_PTS BoxPlot")
+boxplot(data$CAR_AGE, col = "blue", xlab = "CAR_AGE", main = "CAR_AGE BoxPlot")
+par(mfrow=c(1,1))
+
+par(mfrow=c(2,2))
+hist(sqrt(data$BLUEBOOK), col = "green", xlab = "SQRT BLUEBOOK", main = "SQRT BLUEBOOK Hist")
+hist((data$TIF), col = "blue", xlab = "TIF", main = "TIF Hist")
+boxplot(sqrt(data$BLUEBOOK), col = "green", main = "SQRT BLUEBOOK BoxPlot")
+boxplot(data$TIF, col = "blue", main = "TIF BoxPlot")
+par(mfrow=c(1,1))
+
+par(mfrow=c(2,2))
+hist(data$MVR_PTS, col = "red", xlab = "MVR_PTS", main = "MVR_PTS Hist")
+hist(data$CAR_AGE, col = "blue", xlab = "CAR_AGE", main = "CAR_AGE Hist")
+boxplot(data$MVR_PTS, col = "red", main = "MVR_PTS BoxPlot")
+boxplot(data$CAR_AGE, col = "blue", xlab = "CAR_AGE", main = "CAR_AGE BoxPlot")
+par(mfrow=c(1,1))
+
+
+par(mfrow=c(2,2))
+hist(data$TRAVTIME, col = "red", xlab = "TRAVTIME", main = "TRAVTIME Hist")
+#hist(data$JOB, col = "blue", xlab = "JOB", main = "JOB Hist")
+boxplot(data$TRAVTIME, col = "red", main = "TRAVTIME BoxPlot")
+#boxplot(data$JOB, col = "blue", xlab = "JOB", main = "JOB BoxPlot")
+par(mfrow=c(1,1))
+
+
+
+par(mfrow=c(2,2))
+hist(sqrt(data$BLUEBOOK), col = "green", xlab = "SQRT BLUEBOOK", main = "SQRT BLUEBOOK Hist")
+hist((data$TIF), col = "blue", xlab = "TIF", main = "TIF Hist")
+boxplot(sqrt(data$BLUEBOOK), col = "green", main = "SQRT BLUEBOOK BoxPlot")
+boxplot(data$TIF, col = "blue", main = "TIF BoxPlot")
+par(mfrow=c(1,1))
+
+
+
+```   
+ 
+### Chart 3
+    
+```{r}
+plot_ly(x=risk)
+
+
+```
+
+### Chart 3
+    
+```{r}
+plot_ly(x=data$JOB, y= data$TRAVTIME)
+```
+### Chart 3
+    
+```{r}
+
+plot_ly(x=data$OLDCLAIM)
+plot_ly(x=data$TARGET_FLAG)
+```
+
+
+```{r}
+library(caTools)
+
+split = sample.split(data1, SplitRatio = 0.75)
+train_set = subset(data1, split == TRUE)
+test_set = subset(data1, split == FALSE)
+
+```
+  
+```{r}
+ #glm(formula = TARGET_FLAG ~ 1, family = binomial(link = "logit"), 
+ #data = data.train.bin)
+
+#train_set <- as.matrix(train_set)
+
+
+
+svmfit <- svm(TARGET_FLAG~.,
+              data=train_set, 
+              kernel="linear", 
+              cost=1e5)
+summary(svmfit)
+plot(svmfit, train_set)
+
+
+#Evaluate the model against the test set
+
+
+base <- glm(TARGET_FLAG == 1~., data=train_set,family= 'binomial')
+summary(base)
+
+add1.test <- add1(base, scope = .~. + .^2, scale = 0,
+     test = c("none", "Rao", "LRT", "Chisq", "F"),
+     x = NULL, k = 2)
+
+add1.test <- add1(base, scope = .~. + .^2, test = c("Chisq"))
+add1.test[order(add1.test$`Pr(>Chi)`),]              
+
+
+
+Model1t <- glm(TARGET_FLAG == 1 ~ revoked + Manager + female + MARRIED + private + 
+    SINGLE_PARENT  + AGE + HOMEKIDS + YOJ + INCOME + 
+    HOME_VAL + EDUCATION + TRAVTIME + BLUEBOOK + TIF + CAR_TYPE + 
+    RED_CAR + OLDCLAIM + CLM_FREQ + MVR_PTS + CAR_AGE + URBANICITY + 
+    DO_KIDS_DRIVE + INCOME_bin + HOME_OWNER + SQRT_TRAVTIME + 
+    SQRT_BLUEBOOK +INCOME*DO_KIDS_DRIVE + EDUCATION*DO_KIDS_DRIVE +DO_KIDS_DRIVE*INCOME_bin+private*SQRT_TRAVTIME +    
+private*TRAVTIME  +Manager*DO_KIDS_DRIVE + CAR_AGE*DO_KIDS_DRIVE +      
+AGE*CAR_TYPE+ HOMEKIDS*INCOME+EDUCATION*TRAVTIME+ CLM_FREQ*MVR_PTS, data=train_set,family= 'binomial')
+summary(Model1t)
+
+glm.probs <- predict(Model1t, newdata=test_set,type="response")
+glm.pred <- rep("0", nrow(test_set))
+glm.pred[glm.probs>.5] <- "1"
+mytable <- table(test_set$TARGET_FLAG, glm.pred)
+
+(glm.pred)
+Model1 <- (ifelse(glm.pred==1,0,1))
+
+M1<- accuracy(Model1, as.numeric(test_set$TARGET_FLAG))
+
+
+
+Model1 <- predict(Model1t,newdata=test_set ,type = "response")
+Model1 <- as.vector(Model1)
+test_set$TARGET_FLAG <- as.vector(test_set$TARGET_FLAG)
+
+
+
+
+svmfit <- svm(TARGET_FLAG ~ revoked + Manager + female + MARRIED + private + 
+    SINGLE_PARENT  + AGE + HOMEKIDS + YOJ + INCOME + 
+    HOME_VAL + EDUCATION + TRAVTIME + BLUEBOOK + TIF + CAR_TYPE + 
+    RED_CAR + OLDCLAIM + CLM_FREQ + MVR_PTS + CAR_AGE + URBANICITY + 
+    DO_KIDS_DRIVE + INCOME_bin + HOME_OWNER + SQRT_TRAVTIME + 
+    SQRT_BLUEBOOK +INCOME*DO_KIDS_DRIVE + EDUCATION*DO_KIDS_DRIVE +DO_KIDS_DRIVE*INCOME_bin+private*SQRT_TRAVTIME +    
+private*TRAVTIME  +Manager*DO_KIDS_DRIVE + CAR_AGE*DO_KIDS_DRIVE +      
+AGE*CAR_TYPE+ HOMEKIDS*INCOME+EDUCATION*TRAVTIME+ CLM_FREQ*MVR_PTS,
+              data=train_set, 
+              kernel="linear", 
+              cost=1e5)
+summary(svmfit)
+
+
+Model2 <- predict(svmfit,newdata=test_set,decision.values = FALSE)
+
+
+test_set$TARGET_FLAG <- as.vector(test_set$TARGET_FLAG)
+
+Model2 <- as.numeric(Model2)
+
+library(forecast)
+length(Model2)
+
+M2<- accuracy(Model2, as.numeric(test_set$TARGET_FLAG))
+
+
+
+
+head(train_set$DO_KIDS_DRIVE)
+
+
+train_set$TARGET_FLAG <- as.numeric(train_set$TARGET_FLAG)
+train_set$HOMEKIDS <- as.numeric(train_set$HOMEKIDS)
+train_set$MARRIED<- as.numeric(train_set$MARRIED)
+train_set$SINGLE_PARENT <- as.numeric(train_set$SINGLE_PARENT)
+train_set$TARGET_FLAG <- as.numeric(train_set$TARGET_FLAG)
+train_set$female <- as.numeric(train_set$female)
+train_set$EDUCATION <- as.numeric(train_set$EDUCATION)
+train_set$Manager<- as.numeric(train_set$Manager)
+train_set$private <- as.numeric(train_set$private)
+train_set$TIF <- as.numeric(train_set$TIF)
+train_set$CAR_TYPE <- as.numeric(train_set$CAR_TYPE)
+train_set$RED_CAR <- as.numeric(train_set$RED_CAR)
+train_set$revoked <- as.numeric(train_set$revoked)
+train_set$URBANICITY<- as.numeric(train_set$URBANICITY)
+train_set$DO_KIDS_DRIVE <- as.numeric(train_set$DO_KIDS_DRIVE)
+train_set$INCOME_bin <- as.numeric(train_set$INCOME_bin)
+
+
+test_set$TARGET_FLAG <- as.numeric(test_set$TARGET_FLAG)
+test_set$HOMEKIDS <- as.numeric(test_set$HOMEKIDS)
+test_set$MARRIED<- as.numeric(test_set$MARRIED)
+test_set$SINGLE_PARENT <- as.numeric(test_set$SINGLE_PARENT)
+test_set$TARGET_FLAG <- as.numeric(test_set$TARGET_FLAG)
+test_set$female <- as.numeric(test_set$female)
+test_set$EDUCATION <- as.numeric(test_set$EDUCATION)
+test_set$Manager<- as.numeric(test_set$Manager)
+test_set$private <- as.numeric(test_set$private)
+test_set$TIF <- as.numeric(test_set$TIF)
+test_set$CAR_TYPE <- as.numeric(test_set$CAR_TYPE)
+test_set$RED_CAR <- as.numeric(test_set$RED_CAR)
+test_set$revoked <- as.numeric(test_set$revoked)
+test_set$URBANICITY<- as.numeric(test_set$URBANICITY)
+test_set$DO_KIDS_DRIVE <- as.numeric(test_set$DO_KIDS_DRIVE)
+test_set$INCOME_bin <- as.numeric(test_set$INCOME_bin)
+
+
+
+
+
+library(class)
+
+
+cl <- ifelse(train_set$TARGET_FLAG==1,0,1)
+cl
+ Model3 <- knn(train_set, test_set, k = 9,cl)
+summary(Model3)
+
+Model3 <- as.vector(Model3)
+Model3 <- ifelse(Model3==1,0,1)
+
+M3 <- accuracy(Model3,test_set$TARGET_FLAG)
+
+
+```
+```{r}
+test$TARGET_FLAG <- as.factor(test$TARGET_FLAG)
+
+test$SEX <- as.factor(test$SEX)
+test$EDUCATION <- as.factor(test$EDUCATION)
+
+test$PARENT1 <- as.factor(test$PARENT1)
+test$INCOME <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", test$INCOME)))
+
+test$HOME_VAL <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", test$HOME_VAL)))
+test$RED_CAR <- as.factor(ifelse(test$RED_CAR=="yes", 1, 0))
+test$URBANICITY <- ifelse(test$URBANICITY == "Highly Urban/ Urban", "Urban", "Rural")
+test$URBANICITY <- as.factor(test$URBANICITY)
+test$JOB <- as.factor(test$JOB)
+test$CAR_USE <- as.factor(test$CAR_USE)
+test$CAR_TYPE <- as.factor(test$CAR_TYPE)
+test$DO_KIDS_DRIVE <- as.factor(ifelse(test$KIDSDRIV > 0, 1, 0 ))
+test$OLDCLAIM <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", test$HOME_VAL)))
+test$BLUEBOOK <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", test$BLUEBOOK)))
+str(test)
+# Bin Income
+test$INCOME_bin[is.na(test$INCOME)] <- "NA"
+test$INCOME_bin[test$INCOME == 0] <- "Zero"
+test$INCOME_bin[test$INCOME >= 1 & test$INCOME < 30000] <- "Low"
+test$INCOME_bin[test$INCOME >= 30000 & test$INCOME < 80000] <- "Medium"
+test$INCOME_bin[test$INCOME >= 80000] <- "High"
+test$INCOME_bin <- factor(test$INCOME_bin)
+test$INCOME_bin <- factor(test$INCOME_bin, levels=c("NA","Zero","Low","Medium","High"))
+
+
+
+
+
+Manager <- ifelse(test$JOB=='Manager',1,0)
+revoked <- ifelse(test$REVOKED=='Yes',1,0)
+SINGLE_PARENT <-  ifelse(test$PARENT1 == 'Yes', 1, 0)
+female <-  ifelse(test$SEX == 'z_F', 1, 0)
+MARRIED <- ifelse(test$MSTATUS == 'Yes', 1,0)
+private <- ifelse(test$CAR_USE ==  'Private', 1,0)
+
+
+
+
+test$CAR_AGE[test$CAR_AGE < 0] <- NA
+
+test$AGE[is.na(test$AGE)] <- mean(test$AGE, na.rm = "TRUE")
+test$YOJ <- na.aggregate(test$YOJ, test$JOB, mean, na.rm = TRUE)
+test$INCOME <- na.aggregate(test$INCOME, test$JOB, mean, na.rm = TRUE)
+test$HOME_VAL <- na.aggregate(test$HOME_VAL, test$JOB, mean, na.rm = TRUE )
+test$CAR_AGE <- na.aggregate(test$CAR_AGE, test$CAR_TYPE, mean, na.rm = TRUE)
+test$CAR_AGE[test$CAR_AGE < 0 ] <- 0 
+test$OLDCLAIM <- ifelse(test$CAR_AGE < 5 & !is.na(test$CAR_AGE),0,test$OLDCLAIM)
+test$OLDCLAIM <- na.aggregate(test$OLDCLAIM, test$CAR_AGE, mean, na.rm = TRUE )
+test$HOME_OWNER <- ifelse(test$HOME_VAL == 0, 0, 1)
+test$SQRT_TRAVTIME <- sqrt(test$TRAVTIME)
+test$SQRT_BLUEBOOK <- sqrt(test$BLUEBOOK)
+
+
+newdf <- data.frame(revoked,Manager,female,MARRIED,private, SINGLE_PARENT)
+test1 <- data.frame(newdf,test)
+test1 <- test1[-13]
+test1 <- test1[-14]
+test1 <- test1[-14]
+test1 <- test1[-15]
+test1 <- test1[-23]
+test1 <- test1[-16]
+test1 <- test1[-7]
+test1 <- test1[-21]
+test1 <- test1[-12]
+test1 <- test1[-14]
+test1 <- test1[-11]
+test1 <- test1[-11]
+test1 <- test1[-11]
+
+test1 <- test1[-7]
+
+train_set <- train_set[-10]
+train_set <- train_set[-10]
+train_set <- train_set[-10]
+train_set <- train_set[-10]
+train_set <- train_set[-10]
+train_set <- train_set[-10]
+train_set <- train_set[-15]
+
+
+test1$HOMEKIDS <- as.numeric(test1$HOMEKIDS)
+test1$MARRIED<- as.numeric(test1$MARRIED)
+test1$SINGLE_PARENT <- as.numeric(test1$SINGLE_PARENT)
+
+test1$female <- as.numeric(test1$female)
+
+test1$Manager<- as.numeric(test1$Manager)
+test1$private <- as.numeric(test1$private)
+test1$TIF <- as.numeric(test1$TIF)
+test1$CAR_TYPE <- as.numeric(test1$CAR_TYPE)
+test1$RED_CAR <- as.numeric(test1$RED_CAR)
+test1$revoked <- as.numeric(test1$revoked)
+test1$URBANICITY<- as.numeric(test1$URBANICITY)
+test1$DO_KIDS_DRIVE <- as.numeric(test1$DO_KIDS_DRIVE)
+test1$INCOME_bin <- as.numeric(test1$INCOME_bin)
+test1 <- na.omit(test1)
+train_set<- na.omit(train_set)
+
+
+
+
+
+Model3 <- knn(train_set, test1, k = 9,cl)
+summary(Model3)
+
+```

@@ -1,0 +1,155 @@
+---
+title: "Smith4"
+author: "Evin Smith"
+date: "November 14, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Problem 2
+```{r cars}
+rm(list=ls())
+n <- 1000
+d <- runif(n*n)
+d[d < 0.80] <- NA
+d <- matrix(d,nrow=n,ncol=n) #reshape the vector
+diag(d) <- NA # no self-loops
+d[upper.tri(d)] = t(d)[upper.tri(d)] # undirected graphs are symmetric
+str(d)
+head <- rep(1,1)
+tail <- rep(1,1)
+weight <- rep(1,1)
+k <- 1
+  for (i in 1:1000 ){
+    for (j in 1:1000 ){
+      if (!is.na(d[i,j])){
+        head[k]<-(i)
+        tail[k]<-(j)
+        weight[k]<-(d[i,j]) 
+        k<-k+1 
+      }
+    }
+  }
+
+ds<-cbind(head,tail,weight)
+AdjMatrix2List <- function (d) { head <- rep(1,1)
+tail <- rep(1,1)
+weight <- rep(1,1)
+k <- 1
+for (i in 1:n ){
+  for (j in 1:n ){
+    if (!is.na(d[i,j])){
+      head[k]<-(i)
+      tail[k]<-(j)
+      weight[k]<-(d[i,j]) 
+      k<-k+1
+    }
+  }
+}
+
+cbind(head,tail,weight)
+}
+```
+
+##Problem 3
+```{r}
+n <- 50
+x <- round(runif(n)*1000)
+y <- round(runif(n)*1000)
+plot(x,y,pch=16)
+ #n*N matrix full of NAs
+
+dis <- matrix(rep(NA), n, n)
+
+for (i in 1:n) {
+  for (j in 1:n) {
+    dis[i,j] <- sqrt(((x[j]-x[i])^2)-((y[j]-y[i])^2))  
+  }
+}
+
+ds <- (AdjMatrix2List(dis))
+head(ds)
+
+library(optrees)
+ds.mst <- msTreePrim(1:n, ds) # nodes, arcs
+str(ds.mst)
+
+plot.mst <- function(arclist){
+  node1 <- arclist[,1]
+  node2 <- arclist[,2]
+  segments(x0=x[node1], y0=y[node1], x1=x[node2], y1=y[node2])
+}
+
+{plot(x,y,pch=16)
+plot.mst(ds.mst$tree.arcs)}
+
+```
+## Problem 4
+
+'''
+A)Each Agent is a node that is connected to all the other agents and the edges that connect them have weights, each node translates into the probability of interception. The goal is to find the path with the lowest risk making this a normal minium spanning tree problem. 
+
+B)Starting with any node or pair of agents when we get a pair of agents that know eachother we can an edge for that pair, each agent represents a vertex and the expected value of a pair of agents gives you your probability 
+
+C)If the graph is more dense we can use primms if it's more sparse we can use krushkals 
+
+D) O(klogn) k = number of arcs
+
+
+## Problem 5
+```{r}
+
+s.labels <- c('a','b','c','d','e','f','g','h','i','j')
+s.nodes <- c(90,15,5,20,21,25,14,28,30,45)
+dfnodeslables <- cbind.data.frame(s.labels,s.nodes)
+
+
+edges <-matrix(c(1,2,-90,2,3,-15,7,4,-14,4,5,-20,1,6,-90,3,7,-5,6,7,-25,4,8,-20,1,9,-90,4,10,-20,9,10,-30), ncol=3, byrow=T)
+
+
+edges
+
+graph.mst <- getShortestPathTree(1:10, edges, algorithm = "Bellman-Ford", directed=T)
+finish.time<- (-1*(graph.mst$distances)+dfnodeslables$s.nodes)
+print (finish.time)
+earliestdatedone<- as.Date("2017-11-01") + max(finish.time)
+earliestdatedone
+days <- earliestdatedone-as.Date("2017-11-01")
+days
+
+timeStarttranspose<-matrix(c(2,1,-15,3,2,-5,4,7,-20,5,4,-21,6,1,-25,7,3,-14,7,6,-14,8,4,-28,9,1,-30,10,4,-45,10,9,-45), ncol=3, byrow=T)
+
+timeStarttranspose5810<-matrix(c(2,1,-15,3,2,-5,4,7,-20,5,4,-21,6,1,-25,7,3,-14,7,6,-14,8,4,-28,9,1,-30,10,4,-45,10,9,-45,11,5,0,11,8,0,11,10,0), ncol=3, byrow=T)
+timeStarttranspose5810
+
+timeStarttranspose5810.mst <- getShortestPathTree(1:11, timeStarttranspose5810, algorithm = "Bellman-Ford", directed=T,source.node = 11)
+
+latestfinishindays<-days+timeStarttranspose5810.mst$distances[1:10]
+
+print (latestfinishindays)
+
+lateststartdate<-(latestfinishindays)-s.nodes
+print (lateststartdate)
+slack<- latestfinishindays - finish.time
+slack
+
+
+```
+A,D,F,G,J have a slack of 0 and are on the critical path. Nodes B,C,E,H,I are all flexibile. 
+
+##Extra
+```{r}
+s.lf <- latestfinishindays
+s.n <- finish.time
+s.desc <- slack
+barplot(rbind(s.lf-s.n,s.n),horiz=TRUE,col=c("white","gray"),
+border=0,names.arg = s.desc,las=1)
+
+```
+
+ 
